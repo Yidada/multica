@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -47,7 +48,30 @@ channel.`,
 	RunE: runChatThread,
 }
 
+var chatReportCmd = &cobra.Command{
+	Use:   "report",
+	Short: "Tell the person who started this task, in chat, how it ended",
+	Long: `Write a short report into your chat with the person at the top of this task
+(the task's originator): one or two sentences in your own voice about the
+outcome, e.g. "CLE-147 is ready for review: the endpoint and fallback are in,
+tests pass."
+
+Call it when the issue moves to in_review, done or blocked. The chat session,
+the agent and the recipient all come from your task token; you cannot choose
+them. It does not start a new run. Repeating the same --status for the same
+task is a no-op that returns the existing report. If the run ends without a
+report, the server writes a fixed-format one instead.
+
+Only works inside an agent task on an issue (MULTICA_TOKEN must be a mat_
+task token).`,
+	Args: cobra.NoArgs,
+	RunE: runChatReport,
+}
+
 func init() {
+	addChatReportFlags(chatReportCmd)
+	chatCmd.AddCommand(chatReportCmd)
+
 	for _, c := range []*cobra.Command{chatHistoryCmd, chatThreadCmd} {
 		c.Flags().Int("limit", 0, "Maximum number of messages to return (the server clamps the range)")
 		c.Flags().String("before", "", "Opaque cursor (a next_cursor from a prior page) to read older messages")
@@ -152,4 +176,68 @@ func numVal(m map[string]any, key string) string {
 		return strconv.Itoa(int(v))
 	}
 	return ""
+}
+
+func addChatReportFlags(c *cobra.Command) {
+	c.Flags().String("status", "", "Outcome being reported: in_review, done, or blocked (required)")
+	c.Flags().String("content", "", "Report text (decodes \\n, \\r, \\t, \\\\)")
+	c.Flags().Bool("content-stdin", false, "Read the report text from stdin")
+	c.Flags().String("content-file", "", "Read the report text from a UTF-8 file. The path must be inside the current working directory unless --allow-external-file is set.")
+	c.Flags().Bool("allow-external-file", false, "Allow --content-file to read a path outside the current working directory.")
+	c.Flags().String("issue", "", "Optional consistency check: the issue UUID this task runs on")
+	c.Flags().String("output", "json", "Output format: table or json")
+}
+
+func runChatReport(cmd *cobra.Command, _ []string) error {
+	if !inDaemonManagedExecutionContext() {
+		return fmt.Errorf("multica chat report only works inside an agent task")
+	}
+	status, _ := cmd.Flags().GetString("status")
+	status = strings.TrimSpace(status)
+	switch status {
+	case "in_review", "done", "blocked":
+	case "":
+		return fmt.Errorf("--status is required (in_review, done, or blocked)")
+	default:
+		return fmt.Errorf("--status must be one of in_review, done, blocked; got %q", status)
+	}
+	content, hasContent, err := resolveTextFlag(cmd, "content")
+	if err != nil {
+		return err
+	}
+	if !hasContent || strings.TrimSpace(content) == "" {
+		return fmt.Errorf("--content, --content-stdin, or --content-file is required")
+	}
+	if err := guardLocalPathLinks(content, "chat report",
+		"Report the outcome in words; deliver files on the issue with `multica issue comment add <issue-id> --attachment <path>`."); err != nil {
+		return err
+	}
+	issueID, _ := cmd.Flags().GetString("issue")
+
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+
+	body := map[string]any{"status": status, "content": content}
+	if issueID = strings.TrimSpace(issueID); issueID != "" {
+		body["issue_id"] = issueID
+	}
+	var resp map[string]any
+	if err := client.PostJSON(ctx, "/api/chat/report", body, &resp); err != nil {
+		return fmt.Errorf("chat report: %w", err)
+	}
+	if dedup, _ := resp["deduplicated"].(bool); dedup {
+		fmt.Fprintf(os.Stderr, "Already reported %s for this task; nothing new was written.\n", status)
+	}
+	output, _ := cmd.Flags().GetString("output")
+	if output == "table" {
+		cli.PrintTable(os.Stdout, []string{"MESSAGE_ID", "CHAT_SESSION_ID", "DEDUPLICATED"}, [][]string{{
+			strVal(resp, "message_id"), strVal(resp, "chat_session_id"), fmt.Sprint(resp["deduplicated"]),
+		}})
+		return nil
+	}
+	return cli.PrintJSON(os.Stdout, resp)
 }
