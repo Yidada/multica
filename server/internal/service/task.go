@@ -55,6 +55,10 @@ type TaskService struct {
 	// FeatureFlags is the server-side toggle router. Nil is valid and returns
 	// each call site's default.
 	FeatureFlags *featureflag.Service
+	// ChatReportAccess decides whether a task's originator may still use the
+	// agent, gating task reports into their chat (WriteChatReport). Wired by
+	// the handler to its invocation check; nil skips the check.
+	ChatReportAccess func(ctx context.Context, agent db.Agent, originatorUserID, workspaceID string) bool
 	// EmptyClaim caches "this runtime has no queued task" so the daemon
 	// poll path can skip a Postgres scan on the steady-state empty case.
 	// Optional — a nil cache disables the fast path and every claim
@@ -4573,6 +4577,11 @@ func (s *TaskService) CompleteTaskWithTransition(ctx context.Context, taskID pgt
 		}
 	}
 
+	// Tell the originator in chat when this run moved the issue to in_review /
+	// done / blocked and the agent did not report it itself. Runs after the
+	// fallback comment above so the excerpt can quote it.
+	s.reportTaskOutcomeFallback(ctx, task, false)
+
 	// Quick-create tasks: locate the issue the agent just created and push
 	// an inbox confirmation to the requester. The agent has no issue / chat
 	// link, so the regular completion paths above don't apply. We find the
@@ -5182,6 +5191,7 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 	// that task's agent; recoverDelegatedTaskFailure coalesces it with an
 	// existing coordinator run and deduplicates by the failed task id.
 	if retried == nil {
+		s.reportTaskOutcomeFallback(ctx, task, true)
 		_, recoveryErr := s.recoverDelegatedTaskFailure(ctx, task)
 		if recoveryErr != nil {
 			slog.Warn("delegated task failure recovery failed",
@@ -6057,6 +6067,7 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 			}
 		}
 		if !retryPending {
+			s.reportTaskOutcomeFallback(ctx, t, true)
 			if _, err := s.recoverDelegatedTaskFailure(ctx, t); err != nil {
 				slog.Warn("handle failed tasks: delegated failure recovery failed",
 					"task_id", util.UUIDToString(t.ID),

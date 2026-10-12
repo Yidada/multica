@@ -2036,6 +2036,10 @@ type ChatMessageResponse struct {
 	// agent can `multica attachment download <id>` rather than guessing
 	// from a markdown URL that may expire.
 	Attachments []AttachmentResponse `json:"attachments,omitempty"`
+	// SourceIssueID and ReportStatus are set on task_update reports only: the
+	// issue the report is about and the outcome it reports.
+	SourceIssueID *string `json:"source_issue_id,omitempty"`
+	ReportStatus  *string `json:"report_status,omitempty"`
 }
 
 func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
@@ -2066,6 +2070,8 @@ func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) C
 		MessageKind:   normalizeMessageKind(m.MessageKind),
 		QuickActions:  decodeChatQuickActions(m.QuickActions),
 		Attachments:   attachments,
+		SourceIssueID: uuidToPtr(m.SourceIssueID),
+		ReportStatus:  textToPtr(m.ReportStatus),
 	}
 }
 
@@ -2114,6 +2120,8 @@ func normalizeMessageKind(kind string) string {
 		return protocol.ChatMessageKindOnboardingKickoff
 	case protocol.ChatMessageKindOnboardingOpening:
 		return protocol.ChatMessageKindOnboardingOpening
+	case protocol.ChatMessageKindTaskUpdate:
+		return protocol.ChatMessageKindTaskUpdate
 	default:
 		return protocol.ChatMessageKindMessage
 	}

@@ -533,6 +533,9 @@ type ChatMessage struct {
 	ChannelOutboundChatID         pgtype.Text        `json:"channel_outbound_chat_id"`
 	ChannelOutboundMessageIds     []string           `json:"channel_outbound_message_ids"`
 	ChannelTypingSettled          bool               `json:"channel_typing_settled"`
+	SourceIssueID                 pgtype.UUID        `json:"source_issue_id"`
+	SourceTaskID                  pgtype.UUID        `json:"source_task_id"`
+	ReportStatus                  pgtype.Text        `json:"report_status"`
 }
 
 type ChatPinnedAgent struct {

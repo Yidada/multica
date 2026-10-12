@@ -537,6 +537,12 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	}
 	h.PRRefresh = ghsnapshot.NewManager(ghClient, queries, txStarter, h.broadcastPRSnapshotApplied)
 	taskSvc.PRSnapshotsEnabled = h.PRRefresh.Enabled()
+	// Task reports into chat are gated on the originator still being allowed
+	// to invoke the agent: an agent made private must stop writing into a
+	// former user's chat.
+	taskSvc.ChatReportAccess = func(ctx context.Context, agent db.Agent, originatorUserID, workspaceID string) bool {
+		return h.canInvokeAgent(ctx, agent, "member", originatorUserID, "", workspaceID)
+	}
 
 	return h
 }
