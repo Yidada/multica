@@ -283,6 +283,12 @@ func writeAvailableCommands(b *strings.Builder, ctx TaskContextForEnv) {
 	}
 }
 
+// chatReportStatusLine teaches the chat report (CLE-147): the person who
+// started the task hears the outcome in chat without having to ask. The server
+// writes a fixed-format report when the run ends without one, so this line is
+// what makes the report read like the agent rather than a template.
+const chatReportStatusLine = "- Each time you move the issue to `in_review`, `done` or `blocked`, also tell the person who started this task: write one or two sentences in your own voice — the outcome and what, if anything, they need to do — to a file in your working directory and run `multica chat report --status <in_review|done|blocked> --content-file <path>`. It lands in your chat with them and starts no run; skipped, the server posts a fixed summary instead. A `no_originator` rejection means no human started this task; move on.\n"
+
 // duplicateOfCommandLine teaches the duplicate mark (MUL-7821). Without it
 // agents cancel duplicates with a plain status change plus a comment, which
 // leaves the original's duplicates list empty.
@@ -781,6 +787,7 @@ func writeWorkflowIssue(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("- You delivered what the issue itself asks for and it awaits acceptance → `in_review`. Delivering an issue assigned to you — including a sub-issue in a chain or stage — always lands here; stage barriers and parent notifications depend on that signal. `done` stays human.\n")
 	b.WriteString("- The issue's work continues beyond this turn — you dispatched sub-issues, or delivered one part with more underway → `in_progress`.\n")
 	b.WriteString("- You cannot proceed without something you are missing → `blocked`, and post a comment explaining the blocker unless your Agent Identity forbids issue comments.\n")
+	b.WriteString(chatReportStatusLine)
 	if ctx.IsSquadLeader {
 		b.WriteString("- Squad leader: dispatching members is not delivery — a dispatch turn leaves the parent `in_progress`, and it moves to `in_review` only on the later turn (a member update or stage-barrier re-trigger) where you confirm the overall goal is met.\n")
 	}
