@@ -2435,6 +2435,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// thread (?id for a specific one, else the thread the session is in).
 			r.Get("/api/chat/history", h.GetChatChannelHistory)
 			r.Get("/api/chat/thread", h.GetChatThread)
+			// Agent-facing task report (CLE-147): the running task's agent writes
+			// a task_update message into its chat with the task's originator.
+			// Session, agent and originator all come from the task token.
+			r.Post("/api/chat/report", h.ReportTaskToChat)
 
 			// Inbox
 			r.Route("/api/inbox", func(r chi.Router) {

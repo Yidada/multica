@@ -250,6 +250,11 @@ type ChatMessagePayload struct {
 	Content       string `json:"content"`
 	TaskID        string `json:"task_id,omitempty"`
 	CreatedAt     string `json:"created_at"`
+	// MessageKind and SourceIssueID are additive and only set for kinds other
+	// than an ordinary message (today: task_update reports). Older clients
+	// ignore them and render the row as an ordinary assistant message.
+	MessageKind   string `json:"message_kind,omitempty"`
+	SourceIssueID string `json:"source_issue_id,omitempty"`
 }
 
 // Chat message kinds (chat_message.message_kind). Additive: unknown values
@@ -271,6 +276,11 @@ const (
 	// the opening self-describes: chat renders the starter cards under this
 	// kind instead of quick-action chips (MUL-5765).
 	ChatMessageKindOnboardingOpening = "onboarding_opening"
+	// ChatMessageKindTaskUpdate is an assistant report about an issue task's
+	// outcome, written by `multica chat report` or by the server fallback when
+	// the run ended without one. It is not a chat turn: no task_id, never
+	// enqueues a run. source_issue_id / report_status describe what it is about.
+	ChatMessageKindTaskUpdate = "task_update"
 )
 
 // ChatDonePayload is broadcast when an agent finishes responding to a chat
